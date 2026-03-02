@@ -16,6 +16,7 @@ import os
 from datetime import datetime, date
 from pathlib import Path
 
+from backend.database import Database
 from backend.parsers import load_parsed
 from backend.alerts import load_alerts
 
@@ -79,12 +80,31 @@ st.markdown("""
 
 # ─── Data ───────────────────────────────────────────────────────────────────
 def _merge_live_holdings(etfs: list[dict]) -> list[dict]:
-    """Overlay live parsed holdings onto the base ETF data when available.
+    """Overlay live holdings onto the base ETF data when available.
 
-    Checks data/parsed/holdings_YYYYMMDD.json for today's downloaded data.
-    If a file exists for an ETF, its top_holdings are replaced with real data.
+    Priority:
+      1. SQLite database (data/database.db) — most recent holdings
+      2. Parsed JSON files (data/parsed/holdings_YYYYMMDD.json) — today's date
+      3. Fall back to hardcoded mock data below
     """
-    parsed = load_parsed()  # loads today's date by default
+    parsed = None
+
+    # Try database first
+    try:
+        db = Database()
+        parsed = db.get_latest_holdings_all()
+        db.close()
+        if parsed:
+            source = "database"
+    except Exception:
+        parsed = None
+
+    # Fall back to JSON files
+    if not parsed:
+        parsed = load_parsed()
+        if parsed:
+            source = "json"
+
     if not parsed:
         return etfs
 
@@ -93,7 +113,7 @@ def _merge_live_holdings(etfs: list[dict]) -> list[dict]:
         if ticker in parsed and parsed[ticker]:
             etf["top_holdings"] = parsed[ticker]
             etf["holdings_count"] = len(parsed[ticker])
-            etf["_data_source"] = "live"
+            etf["_data_source"] = source
 
     return etfs
 
@@ -467,9 +487,11 @@ with st.sidebar:
     st.divider()
 
     # Show data source status
-    live_count = sum(1 for e in etfs if e.get("_data_source") == "live")
-    if live_count > 0:
-        st.success(f"Live data: {live_count}/{len(etfs)} ETFs")
+    live_etfs = [e for e in etfs if e.get("_data_source")]
+    if live_etfs:
+        source = live_etfs[0].get("_data_source", "live")
+        label = "DB" if source == "database" else "JSON"
+        st.success(f"Live data ({label}): {len(live_etfs)}/{len(etfs)} ETFs")
     else:
         st.caption("Data is illustrative. Run `python -m backend` to fetch live holdings.")
 

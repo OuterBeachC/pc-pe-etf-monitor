@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from backend.config import DATA_DIR, ETF_SOURCES, LOG_DIR
+from backend.database import Database
 from backend.retrieval import download_all, _today_dir
 from backend.parsers import parse_holdings_dir, save_parsed, load_parsed
 from backend.alerts import (
@@ -84,9 +85,14 @@ def run_pipeline(
         "errors": [],
     }
 
+    # Open database connection for the run
+    db = Database()
+    run_id = db.start_pipeline_run(date_str)
+    logger.info("Pipeline run #%d started, writing to %s", run_id, db.path)
+
     # ── Step 1: Download ──
     if not skip_download:
-        logger.info("Step 1/4: Downloading holdings...")
+        logger.info("Step 1/5: Downloading holdings...")
         download_results = download_all(output_dir, tickers)
         result["downloads"] = [
             {k: str(v) if isinstance(v, Path) else v for k, v in r.items()}
@@ -98,20 +104,22 @@ def run_pipeline(
                 logger.error("Download failed: %s — %s", e["ticker"], e["error"])
                 result["errors"].append(f"Download {e['ticker']}: {e['error']}")
     else:
-        logger.info("Step 1/4: Download skipped (--parse-only)")
+        logger.info("Step 1/5: Download skipped (--parse-only)")
 
     # ── Step 2: Parse ──
-    logger.info("Step 2/4: Parsing holdings files...")
+    logger.info("Step 2/5: Parsing holdings files...")
     parsed = parse_holdings_dir(output_dir)
     save_parsed(parsed, date_str)
     result["parsed"] = {t: len(h) for t, h in parsed.items()}
 
     if not parsed:
         logger.warning("No holdings parsed — pipeline stopping early")
+        db.complete_pipeline_run(run_id, result)
+        db.close()
         return result
 
     # ── Step 3: Diff with yesterday ──
-    logger.info("Step 3/4: Comparing with previous day...")
+    logger.info("Step 3/5: Comparing with previous day...")
     yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
     yesterday_parsed = load_parsed(yesterday_str)
 
@@ -123,7 +131,7 @@ def run_pipeline(
         logger.info("No previous day data — skipping diff")
 
     # ── Step 4: Generate alerts ──
-    logger.info("Step 4/4: Generating alerts...")
+    logger.info("Step 4/5: Generating alerts...")
     price_alerts = check_price_moves(parsed)
     allocation_alerts = check_private_allocation(parsed)
 
@@ -135,6 +143,16 @@ def run_pipeline(
         "file": str(alerts_path),
     }
 
+    # ── Step 5: Persist to database ──
+    logger.info("Step 5/5: Writing to database...")
+    db.insert_holdings(date_str, parsed)
+    db.insert_alerts(date_str, price_alerts, allocation_alerts, holdings_diff)
+    db.complete_pipeline_run(run_id, result)
+
+    stats = db.table_stats()
+    logger.info("Database stats: %s", stats)
+    db.close()
+
     # ── Summary ──
     logger.info("=" * 60)
     logger.info("Pipeline complete")
@@ -144,6 +162,7 @@ def run_pipeline(
                 len(price_alerts),
                 sum(1 for a in allocation_alerts if a["exceeds"]),
                 len(holdings_diff))
+    logger.info("  Database:   %s", db.path)
     if result["errors"]:
         logger.warning("  Errors:     %d", len(result["errors"]))
     logger.info("=" * 60)
