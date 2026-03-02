@@ -11,8 +11,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
+import logging
 import os
 from datetime import datetime, date
+from pathlib import Path
+
+from backend.parsers import load_parsed
+from backend.alerts import load_alerts
 
 # ─── Page Config ────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -73,9 +78,34 @@ st.markdown("""
 
 
 # ─── Data ───────────────────────────────────────────────────────────────────
+def _merge_live_holdings(etfs: list[dict]) -> list[dict]:
+    """Overlay live parsed holdings onto the base ETF data when available.
+
+    Checks data/parsed/holdings_YYYYMMDD.json for today's downloaded data.
+    If a file exists for an ETF, its top_holdings are replaced with real data.
+    """
+    parsed = load_parsed()  # loads today's date by default
+    if not parsed:
+        return etfs
+
+    for etf in etfs:
+        ticker = etf["ticker"]
+        if ticker in parsed and parsed[ticker]:
+            etf["top_holdings"] = parsed[ticker]
+            etf["holdings_count"] = len(parsed[ticker])
+            etf["_data_source"] = "live"
+
+    return etfs
+
+
 @st.cache_data
 def load_etf_data():
-    """Load ETF universe data. In production, replace with DB/API reads."""
+    """Load ETF universe data, overlaying live downloaded holdings when available.
+
+    Base data is hardcoded below. When the backend pipeline has been run
+    (python -m backend), parsed holdings files in data/parsed/ are merged in
+    automatically, replacing top_holdings with real provider data.
+    """
     etfs = [
         # ── Private Credit ──
         {
@@ -313,7 +343,7 @@ def load_etf_data():
             "price_history": [{"date": "Sep", "price": 0}, {"date": "Oct", "price": 0}, {"date": "Nov", "price": 0}, {"date": "Dec", "price": 25.00}, {"date": "Jan", "price": 24.80}, {"date": "Feb", "price": 23.50}],
         },
     ]
-    return etfs
+    return _merge_live_holdings(etfs)
 
 
 @st.cache_data
@@ -435,7 +465,13 @@ with st.sidebar:
     st.metric("Private Equity AUM", fmt_aum(pe_aum), f"{len(pe_etfs)} ETFs")
 
     st.divider()
-    st.caption("Data is illustrative. Verify with official sources before trading.")
+
+    # Show data source status
+    live_count = sum(1 for e in etfs if e.get("_data_source") == "live")
+    if live_count > 0:
+        st.success(f"Live data: {live_count}/{len(etfs)} ETFs")
+    else:
+        st.caption("Data is illustrative. Run `python -m backend` to fetch live holdings.")
 
 
 # ─── Header ─────────────────────────────────────────────────────────────────
