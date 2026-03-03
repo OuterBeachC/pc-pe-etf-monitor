@@ -18,6 +18,7 @@ from pathlib import Path
 
 from backend.database import Database
 from backend.parsers import load_parsed
+from backend.seed import seed_database
 
 # ─── Page Config ────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -90,6 +91,12 @@ def load_etf_data():
     """
     db = Database()
     etfs = db.load_etf_data()
+
+    if not etfs:
+        # Auto-seed on first run (e.g. fresh Streamlit Cloud deploy)
+        seed_database(db)
+        etfs = db.load_etf_data()
+
     db.close()
 
     if not etfs:
@@ -338,18 +345,25 @@ with tab_overview:
 
     with col_pie:
         st.markdown("#### Exposure Type Distribution")
-        pie_data = pd.DataFrame([{"type": e["holdings_type"], "aum": e["aum"], "cat": e["category"]} for e in display_etfs])
-        fig_pie = px.pie(
-            pie_data, values="aum", names="type",
-            color_discrete_sequence=["#b45309", "#a16207", "#78716c", "#57534e", "#44403c", "#7c3aed", "#6d28d9", "#5b21b6", "#d97706", "#fbbf24", "#92400e"],
-            hole=0.45,
-        )
-        fig_pie.update_layout(
-            template=PLOTLY_TEMPLATE, paper_bgcolor=CHART_BG, plot_bgcolor=CHART_BG,
-            height=350, margin=dict(l=10, r=10, t=10, b=10),
-            legend=dict(font=dict(size=10)),
-        )
-        st.plotly_chart(fig_pie, use_container_width=True)
+        if display_etfs:
+            pie_data = pd.DataFrame([{"type": e["holdings_type"], "aum": e["aum"], "cat": e["category"]} for e in display_etfs])
+            pie_data = pie_data.dropna(subset=["type", "aum"])
+            if not pie_data.empty:
+                fig_pie = px.pie(
+                    pie_data, values="aum", names="type",
+                    color_discrete_sequence=["#b45309", "#a16207", "#78716c", "#57534e", "#44403c", "#7c3aed", "#6d28d9", "#5b21b6", "#d97706", "#fbbf24", "#92400e"],
+                    hole=0.45,
+                )
+                fig_pie.update_layout(
+                    template=PLOTLY_TEMPLATE, paper_bgcolor=CHART_BG, plot_bgcolor=CHART_BG,
+                    height=350, margin=dict(l=10, r=10, t=10, b=10),
+                    legend=dict(font=dict(size=10)),
+                )
+                st.plotly_chart(fig_pie, use_container_width=True)
+            else:
+                st.caption("No data available for chart.")
+        else:
+            st.caption("No ETFs match the selected filter.")
 
 
 # ═══ HOLDINGS TAB ═══════════════════════════════════════════════════════════
