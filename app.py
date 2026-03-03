@@ -288,22 +288,29 @@ with tab_overview:
 
     df_table = pd.DataFrame(table_data)
 
-    st.dataframe(
-        df_table.style.format({
+    if df_table.empty:
+        st.info("No ETFs match the selected filter.")
+    else:
+        color_subset = [c for c in ["Price Δ%", "3M Flows ($M)"] if c in df_table.columns]
+        styled = df_table.style.format({
             "AUM": lambda x: fmt_aum(x),
             "3M Flows ($M)": lambda x: f"+${x:.1f}M" if x >= 0 else f"-${abs(x):.1f}M",
             "Yield": lambda x: f"{x:.1f}%" if x and x > 0 else "—",
             "Exp. Ratio": "{:.2f}%",
             "Price Δ%": lambda x: f"+{x:.1f}%" if x >= 0 else f"{x:.1f}%",
             "Prem/Disc%": lambda x: f"+{x:.2f}%" if x >= 0 else f"{x:.2f}%",
-        }).applymap(
-            lambda x: "color: #4ade80" if isinstance(x, (int, float)) and x > 0 else ("color: #f87171" if isinstance(x, (int, float)) and x < 0 else ""),
-            subset=["Price Δ%", "3M Flows ($M)"]
-        ),
-        use_container_width=True,
-        hide_index=True,
-        height=min(len(display_etfs) * 38 + 38, 500),
-    )
+        })
+        if color_subset:
+            styled = styled.map(
+                lambda x: "color: #4ade80" if isinstance(x, (int, float)) and x > 0 else ("color: #f87171" if isinstance(x, (int, float)) and x < 0 else ""),
+                subset=color_subset,
+            )
+        st.dataframe(
+            styled,
+            use_container_width=True,
+            hide_index=True,
+            height=min(len(display_etfs) * 38 + 38, 500),
+        )
 
     # Charts row
     col_aum_chart, col_pie = st.columns(2)
@@ -379,18 +386,17 @@ with tab_holdings:
     holdings_df.index = range(1, len(holdings_df) + 1)
     holdings_df.columns = ["Holding", "Ticker", "Weight%", "Price", "Change%", "Impact%"]
 
-    st.dataframe(
-        holdings_df.style.format({
-            "Weight%": "{:.1f}%",
-            "Price": "${:.2f}",
-            "Change%": lambda x: f"+{x:.1f}%" if x >= 0 else f"{x:.1f}%",
-            "Impact%": lambda x: f"+{x:.3f}%" if x >= 0 else f"{x:.3f}%",
-        }).applymap(
-            lambda x: "color: #4ade80" if isinstance(x, (int, float)) and x > 0 else ("color: #f87171" if isinstance(x, (int, float)) and x < 0 else ""),
-            subset=["Change%", "Impact%"]
-        ).bar(subset=["Weight%"], color="#44403c", vmin=0),
-        use_container_width=True,
-    )
+    holdings_styled = holdings_df.style.format({
+        "Weight%": "{:.1f}%",
+        "Price": "${:.2f}",
+        "Change%": lambda x: f"+{x:.1f}%" if x >= 0 else f"{x:.1f}%",
+        "Impact%": lambda x: f"+{x:.3f}%" if x >= 0 else f"{x:.3f}%",
+    }).map(
+        lambda x: "color: #4ade80" if isinstance(x, (int, float)) and x > 0 else ("color: #f87171" if isinstance(x, (int, float)) and x < 0 else ""),
+        subset=["Change%", "Impact%"]
+    ).bar(subset=["Weight%"], color="#44403c", vmin=0)
+
+    st.dataframe(holdings_styled, use_container_width=True)
 
     st.caption(f"Source: [{etf['holdings_source']}]({etf['holdings_source']}) · Format: {etf['holdings_format']}")
 
