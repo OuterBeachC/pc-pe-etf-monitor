@@ -13,11 +13,14 @@ from plotly.subplots import make_subplots
 import json
 import logging
 import os
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, date
 from pathlib import Path
 
 from backend.database import Database
 from backend.parsers import load_parsed
+from backend.pipeline import run_pipeline
 from backend.seed import seed_database
 
 # ─── Page Config ────────────────────────────────────────────────────────────
@@ -83,18 +86,22 @@ st.markdown("""
 def load_etf_data():
     """Load ETF universe data from the SQLite database.
 
-    Requires the database to be seeded first:
-        python -m backend.seed
-
-    Live holdings from the pipeline (python -m backend) are overlaid
-    automatically when available via parsed JSON files.
+    On first run the database is seeded with ETF metadata, then the
+    pipeline is executed to fetch live holdings from provider sites.
+    Subsequent loads use cached data + any fresh parsed JSON overlays.
     """
     db = Database()
     etfs = db.load_etf_data()
 
     if not etfs:
-        # Auto-seed on first run (e.g. fresh Streamlit Cloud deploy)
+        # First run: seed metadata (ETF info, AUM history, price history)
         seed_database(db)
+        # Fetch live holdings via pipeline (downloads what it can over HTTP;
+        # Selenium-dependent ETFs will gracefully skip if Chrome is absent)
+        try:
+            run_pipeline()
+        except Exception as exc:
+            logger.warning("Pipeline run failed on startup: %s", exc)
         etfs = db.load_etf_data()
 
     db.close()
@@ -394,12 +401,52 @@ with tab_holdings:
     mc4.metric("Yield", f"{etf['yield_30d']:.1f}%" if etf["yield_30d"] > 0 else "—")
     mc5.metric("Expense", f"{etf['expense_ratio']:.2f}%", f"Total: {etf['total_expense']:.2f}%")
 
-    st.markdown("#### Top Holdings")
-    holdings_df = pd.DataFrame(etf["top_holdings"])
-    holdings_df["impact"] = (holdings_df["weight"] / 100 * holdings_df["change"]).round(3)
-    holdings_df.index = range(1, len(holdings_df) + 1)
-    holdings_df.columns = ["Holding", "Ticker", "Weight%", "Price", "Change%", "Impact%"]
+    st.markdown(f"#### Holdings ({len(etf['top_holdings'])})")
+    if etf["top_holdings"]:
+        holdings_df = pd.DataFrame(etf["top_holdings"])
 
+        # Compute impact if both weight and change are present
+        if "weight" in holdings_df.columns and "change" in holdings_df.columns:
+            holdings_df["impact"] = (holdings_df["weight"] / 100 * holdings_df["change"]).round(3)
+
+        # Rename known columns for display
+        col_rename = {
+            "name": "Holding", "ticker": "Ticker", "weight": "Weight%",
+            "price": "Price", "change": "Change%", "impact": "Impact%",
+            "market_value": "Mkt Value", "coupon": "Coupon",
+            "maturity": "Maturity", "rating": "Rating",
+        }
+        holdings_df = holdings_df.rename(columns={k: v for k, v in col_rename.items() if k in holdings_df.columns})
+        holdings_df.index = range(1, len(holdings_df) + 1)
+
+        # Build format dict based on available columns
+        fmt = {}
+        if "Weight%" in holdings_df.columns:
+            fmt["Weight%"] = "{:.1f}%"
+        if "Price" in holdings_df.columns:
+            fmt["Price"] = "${:.2f}"
+        if "Change%" in holdings_df.columns:
+            fmt["Change%"] = lambda x: f"+{x:.1f}%" if x >= 0 else f"{x:.1f}%"
+        if "Impact%" in holdings_df.columns:
+            fmt["Impact%"] = lambda x: f"+{x:.3f}%" if x >= 0 else f"{x:.3f}%"
+        if "Mkt Value" in holdings_df.columns:
+            fmt["Mkt Value"] = "${:,.0f}"
+
+        styler = holdings_df.style.format(fmt)
+
+        # Color change/impact columns
+        color_cols = [c for c in ("Change%", "Impact%") if c in holdings_df.columns]
+        if color_cols:
+            styler = styler.applymap(
+                lambda x: "color: #4ade80" if isinstance(x, (int, float)) and x > 0 else ("color: #f87171" if isinstance(x, (int, float)) and x < 0 else ""),
+                subset=color_cols,
+            )
+        if "Weight%" in holdings_df.columns:
+            styler = styler.bar(subset=["Weight%"], color="#44403c", vmin=0)
+
+        st.dataframe(styler, use_container_width=True)
+    else:
+        st.info("No holdings data available. Run the pipeline to fetch live data.")
     holdings_styled = holdings_df.style.format({
         "Weight%": "{:.1f}%",
         "Price": "${:.2f}",
@@ -414,15 +461,24 @@ with tab_holdings:
 
     st.caption(f"Source: [{etf['holdings_source']}]({etf['holdings_source']}) · Format: {etf['holdings_format']}")
 
-    # Holdings overlap
+    # Holdings overlap -- dynamically find tickers held by multiple ETFs
     st.markdown("#### Cross-ETF Holdings Overlap")
-    overlap_tickers = ["ARCC", "OBDC", "BXSL", "FSK", "MAIN", "SPACEX", "NVDA", "META", "IBKR", "TSLA"]
-    overlap_data = []
-    for t in overlap_tickers:
-        found_in = [e["ticker"] for e in etfs if any(h["ticker"] == t for h in e["top_holdings"])]
-        overlap_data.append({"Holding": t, "Held By": ", ".join(found_in), "Count": len(found_in)})
-    overlap_df = pd.DataFrame(overlap_data).sort_values("Count", ascending=False)
-    st.dataframe(overlap_df, use_container_width=True, hide_index=True)
+    from collections import Counter
+    ticker_to_etfs: dict[str, list[str]] = {}
+    for e in etfs:
+        for h in e["top_holdings"]:
+            ht = h.get("ticker", "")
+            if ht:
+                ticker_to_etfs.setdefault(ht, []).append(e["ticker"])
+    overlap_data = [
+        {"Holding": t, "Held By": ", ".join(sorted(set(etf_list))), "Count": len(set(etf_list))}
+        for t, etf_list in ticker_to_etfs.items() if len(set(etf_list)) > 1
+    ]
+    if overlap_data:
+        overlap_df = pd.DataFrame(overlap_data).sort_values("Count", ascending=False)
+        st.dataframe(overlap_df, use_container_width=True, hide_index=True)
+    else:
+        st.caption("No overlapping holdings found across ETFs.")
 
 
 # ═══ AUM & FLOWS TAB ═══════════════════════════════════════════════════════

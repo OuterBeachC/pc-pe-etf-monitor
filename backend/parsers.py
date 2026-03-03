@@ -81,12 +81,12 @@ def _clean_numeric(val):
         return 0.0
 
 
-def _to_holdings_list(df: pd.DataFrame, max_rows: int = 10) -> list[dict]:
-    """Convert a DataFrame to the top_holdings list format expected by app.py."""
+def _to_holdings_list(df: pd.DataFrame) -> list[dict]:
+    """Convert a DataFrame to the holdings list format expected by app.py."""
     df = _normalize_columns(df)
 
     holdings = []
-    for _, row in df.head(max_rows).iterrows():
+    for _, row in df.iterrows():
         holding = {
             "name": str(row.get("name", "Unknown")).strip(),
             "ticker": str(row.get("ticker", "")).strip(),
