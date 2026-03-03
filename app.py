@@ -394,24 +394,52 @@ with tab_holdings:
     mc4.metric("Yield", f"{etf['yield_30d']:.1f}%" if etf["yield_30d"] > 0 else "—")
     mc5.metric("Expense", f"{etf['expense_ratio']:.2f}%", f"Total: {etf['total_expense']:.2f}%")
 
-    st.markdown("#### Top Holdings")
-    holdings_df = pd.DataFrame(etf["top_holdings"])
-    holdings_df["impact"] = (holdings_df["weight"] / 100 * holdings_df["change"]).round(3)
-    holdings_df.index = range(1, len(holdings_df) + 1)
-    holdings_df.columns = ["Holding", "Ticker", "Weight%", "Price", "Change%", "Impact%"]
+    st.markdown(f"#### Holdings ({len(etf['top_holdings'])})")
+    if etf["top_holdings"]:
+        holdings_df = pd.DataFrame(etf["top_holdings"])
 
-    st.dataframe(
-        holdings_df.style.format({
-            "Weight%": "{:.1f}%",
-            "Price": "${:.2f}",
-            "Change%": lambda x: f"+{x:.1f}%" if x >= 0 else f"{x:.1f}%",
-            "Impact%": lambda x: f"+{x:.3f}%" if x >= 0 else f"{x:.3f}%",
-        }).applymap(
-            lambda x: "color: #4ade80" if isinstance(x, (int, float)) and x > 0 else ("color: #f87171" if isinstance(x, (int, float)) and x < 0 else ""),
-            subset=["Change%", "Impact%"]
-        ).bar(subset=["Weight%"], color="#44403c", vmin=0),
-        use_container_width=True,
-    )
+        # Compute impact if both weight and change are present
+        if "weight" in holdings_df.columns and "change" in holdings_df.columns:
+            holdings_df["impact"] = (holdings_df["weight"] / 100 * holdings_df["change"]).round(3)
+
+        # Rename known columns for display
+        col_rename = {
+            "name": "Holding", "ticker": "Ticker", "weight": "Weight%",
+            "price": "Price", "change": "Change%", "impact": "Impact%",
+            "market_value": "Mkt Value", "coupon": "Coupon",
+            "maturity": "Maturity", "rating": "Rating",
+        }
+        holdings_df = holdings_df.rename(columns={k: v for k, v in col_rename.items() if k in holdings_df.columns})
+        holdings_df.index = range(1, len(holdings_df) + 1)
+
+        # Build format dict based on available columns
+        fmt = {}
+        if "Weight%" in holdings_df.columns:
+            fmt["Weight%"] = "{:.1f}%"
+        if "Price" in holdings_df.columns:
+            fmt["Price"] = "${:.2f}"
+        if "Change%" in holdings_df.columns:
+            fmt["Change%"] = lambda x: f"+{x:.1f}%" if x >= 0 else f"{x:.1f}%"
+        if "Impact%" in holdings_df.columns:
+            fmt["Impact%"] = lambda x: f"+{x:.3f}%" if x >= 0 else f"{x:.3f}%"
+        if "Mkt Value" in holdings_df.columns:
+            fmt["Mkt Value"] = "${:,.0f}"
+
+        styler = holdings_df.style.format(fmt)
+
+        # Color change/impact columns
+        color_cols = [c for c in ("Change%", "Impact%") if c in holdings_df.columns]
+        if color_cols:
+            styler = styler.applymap(
+                lambda x: "color: #4ade80" if isinstance(x, (int, float)) and x > 0 else ("color: #f87171" if isinstance(x, (int, float)) and x < 0 else ""),
+                subset=color_cols,
+            )
+        if "Weight%" in holdings_df.columns:
+            styler = styler.bar(subset=["Weight%"], color="#44403c", vmin=0)
+
+        st.dataframe(styler, use_container_width=True)
+    else:
+        st.info("No holdings data available. Run the pipeline to fetch live data.")
 
     st.caption(f"Source: [{etf['holdings_source']}]({etf['holdings_source']}) · Format: {etf['holdings_format']}")
 
