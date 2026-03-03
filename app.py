@@ -443,15 +443,24 @@ with tab_holdings:
 
     st.caption(f"Source: [{etf['holdings_source']}]({etf['holdings_source']}) · Format: {etf['holdings_format']}")
 
-    # Holdings overlap
+    # Holdings overlap -- dynamically find tickers held by multiple ETFs
     st.markdown("#### Cross-ETF Holdings Overlap")
-    overlap_tickers = ["ARCC", "OBDC", "BXSL", "FSK", "MAIN", "SPACEX", "NVDA", "META", "IBKR", "TSLA"]
-    overlap_data = []
-    for t in overlap_tickers:
-        found_in = [e["ticker"] for e in etfs if any(h["ticker"] == t for h in e["top_holdings"])]
-        overlap_data.append({"Holding": t, "Held By": ", ".join(found_in), "Count": len(found_in)})
-    overlap_df = pd.DataFrame(overlap_data).sort_values("Count", ascending=False)
-    st.dataframe(overlap_df, use_container_width=True, hide_index=True)
+    from collections import Counter
+    ticker_to_etfs: dict[str, list[str]] = {}
+    for e in etfs:
+        for h in e["top_holdings"]:
+            ht = h.get("ticker", "")
+            if ht:
+                ticker_to_etfs.setdefault(ht, []).append(e["ticker"])
+    overlap_data = [
+        {"Holding": t, "Held By": ", ".join(sorted(set(etf_list))), "Count": len(set(etf_list))}
+        for t, etf_list in ticker_to_etfs.items() if len(set(etf_list)) > 1
+    ]
+    if overlap_data:
+        overlap_df = pd.DataFrame(overlap_data).sort_values("Count", ascending=False)
+        st.dataframe(overlap_df, use_container_width=True, hide_index=True)
+    else:
+        st.caption("No overlapping holdings found across ETFs.")
 
 
 # ═══ AUM & FLOWS TAB ═══════════════════════════════════════════════════════
