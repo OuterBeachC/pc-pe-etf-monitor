@@ -215,7 +215,7 @@ def save_alerts(
         },
     }
     out.write_text(json.dumps(payload, indent=2, default=str))
-    logger.info("Alerts saved → %s", out)
+    logger.info("Alerts saved -> %s", out)
     return out
 
 

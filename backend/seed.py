@@ -14,7 +14,7 @@ from backend.database import Database
 
 logger = logging.getLogger(__name__)
 
-# ─── Month labels → approximate YYYYMMDD dates for history seeding ────────────
+# ─── Month labels -> approximate YYYYMMDD dates for history seeding ────────────
 MONTH_DATES = {
     "Sep": "20250901", "Oct": "20251001", "Nov": "20251101",
     "Dec": "20251201", "Jan": "20260101", "Feb": "20260201",

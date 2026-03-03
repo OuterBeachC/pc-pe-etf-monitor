@@ -29,9 +29,9 @@ USER_AGENT = (
 HEADERS = {"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml,*/*"}
 
 # ─── ETF Source Definitions ───────────────────────────────────────────────────
-# method: "csv"      → direct HTTP download (requests.get)
-# method: "browser"  → needs headless browser (Playwright)
-# method: "csv+edgar"→ CSV download + SEC EDGAR for opaque sleeve
+# method: "csv"       -> direct HTTP download (requests.get)
+# method: "browser"   -> needs headless browser (Playwright)
+# method: "csv+edgar" -> CSV download + SEC EDGAR for opaque sleeve
 
 ETF_SOURCES = {
     # ── Private Credit ──
@@ -66,12 +66,12 @@ ETF_SOURCES = {
         "name": "SPDR SSGA IG Public & Private Credit ETF",
         "category": "Private Credit",
         "method": "csv+edgar",
-        "url": "https://www.ssga.com/.../priv",
-        "download_url": "https://www.ssga.com/.../holdings-daily-us-en-priv.xlsx",
+        "url": "https://www.ssga.com/us/en/intermediary/library-content/products/fund-data/etfs/us/holdings-daily-us-en-priv.xlsx",
+        "download_url": "https://www.ssga.com/us/en/intermediary/library-content/products/fund-data/etfs/us/holdings-daily-us-en-priv.xlsx",
         "edgar_query": "PRIV",
         "edgar_form": "NPORT-P",
         "file_ext": ".xlsx",
-        "notes": "Public holdings via XLSX. Private sleeve (~8%) opaque — use EDGAR quarterly.",
+        "notes": "Public holdings via XLSX. Private sleeve (~8%) opaque -- use EDGAR quarterly.",
     },
     "PCMM": {
         "name": "BondBloxx Private Credit CLO ETF",
@@ -104,12 +104,31 @@ ETF_SOURCES = {
         "name": "State Street Short Duration IG Public Private Credit ETF",
         "category": "Private Credit",
         "method": "csv+edgar",
-        "url": "https://www.ssga.com/.../prsd",
-        "download_url": "https://www.ssga.com/.../holdings-daily-us-en-prsd.xlsx",
+        "url": "https://www.ssga.com/us/en/intermediary/library-content/products/fund-data/etfs/us/holdings-daily-us-en-prsd.xlsx",
+        "download_url": "https://www.ssga.com/us/en/intermediary/library-content/products/fund-data/etfs/us/holdings-daily-us-en-prsd.xlsx",
         "edgar_query": "PRSD",
         "edgar_form": "NPORT-P",
         "file_ext": ".xlsx",
         "notes": "Same as PRIV. Public sleeve transparent, private sleeve opaque.",
+    },
+    # ── Invesco (Selenium download) ──
+    "GTO": {
+        "name": "Invesco Total Return Bond ETF",
+        "category": "Private Credit",
+        "method": "invesco",
+        "url": "https://www.invesco.com/us/financial-products/etfs/holdings?audienceType=Investor&ticker=GTO",
+        "download_pattern": "invesco_total_return_bond_etf-monthly_holdings*.csv",
+        "file_ext": ".csv",
+        "notes": "Selenium export from Invesco holdings page. Monthly holdings CSV.",
+    },
+    "GTOC": {
+        "name": "Invesco Core Fixed Income ETF",
+        "category": "Private Credit",
+        "method": "invesco",
+        "url": "https://www.invesco.com/us/financial-products/etfs/holdings?audienceType=Investor&ticker=GTOC",
+        "download_pattern": "invesco_core_fixed_income_etf-monthly_holdings*.csv",
+        "file_ext": ".csv",
+        "notes": "Selenium export from Invesco holdings page. Monthly holdings CSV.",
     },
     # ── Private Equity ──
     "XOVR": {

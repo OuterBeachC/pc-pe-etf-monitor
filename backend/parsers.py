@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 # ─── Column Mapping ───────────────────────────────────────────────────────────
-# Maps provider column names → our standard names.
+# Maps provider column names -> our standard names.
 # Parsers try each alias until one matches.
 
 COLUMN_ALIASES = {
@@ -126,13 +126,26 @@ def parse_csv(filepath: Path) -> pd.DataFrame:
 
 
 def parse_xlsx(filepath: Path) -> pd.DataFrame:
-    """Parse an XLSX holdings file (used by SSGA for PRIV/PRSD)."""
+    """Parse an XLSX holdings file (used by SSGA for PRIV/PRSD).
+
+    Handles BadZipFile errors from corrupt or non-XLSX files (e.g. HTML
+    error pages saved with .xlsx extension).
+    """
+    from zipfile import BadZipFile
+
     # SSGA files typically have metadata rows at the top
     try:
         df = pd.read_excel(filepath, engine="openpyxl")
+    except BadZipFile:
+        logger.error("File is not a valid XLSX (BadZipFile): %s", filepath)
+        return pd.DataFrame()
     except Exception:
-        # Try skipping header rows
-        df = pd.read_excel(filepath, engine="openpyxl", skiprows=4)
+        try:
+            # Try skipping header rows
+            df = pd.read_excel(filepath, engine="openpyxl", skiprows=4)
+        except BadZipFile:
+            logger.error("File is not a valid XLSX (BadZipFile): %s", filepath)
+            return pd.DataFrame()
 
     df = df.dropna(how="all")
 
@@ -187,6 +200,9 @@ def parse_holdings_dir(holdings_dir: Path) -> dict[str, list[dict]]:
     """Parse all holdings files in a dated directory.
 
     Returns: {"BIZD": [...holdings...], "PBDC": [...holdings...], ...}
+
+    Errors parsing individual files are caught and logged so that one
+    corrupt file does not crash the entire pipeline.
     """
     results = {}
 
@@ -195,9 +211,12 @@ def parse_holdings_dir(holdings_dir: Path) -> dict[str, list[dict]]:
         filepath = holdings_dir / f"{ticker}_holdings{ext}"
 
         if filepath.exists():
-            holdings = parse_etf_file(ticker, filepath)
-            if holdings:
-                results[ticker] = holdings
+            try:
+                holdings = parse_etf_file(ticker, filepath)
+                if holdings:
+                    results[ticker] = holdings
+            except Exception as exc:
+                logger.error("Failed to parse %s from %s: %s", ticker, filepath, exc)
         else:
             logger.debug("No file for %s at %s", ticker, filepath)
 
@@ -211,7 +230,7 @@ def save_parsed(parsed: dict[str, list[dict]], date_str: str | None = None) -> P
     PARSED_DIR.mkdir(parents=True, exist_ok=True)
     out = PARSED_DIR / f"holdings_{date_str}.json"
     out.write_text(json.dumps(parsed, indent=2, default=str))
-    logger.info("Saved parsed holdings → %s", out)
+    logger.info("Saved parsed holdings -> %s", out)
     return out
 
 
