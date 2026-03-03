@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 # ─── Column Mapping ───────────────────────────────────────────────────────────
-# Maps provider column names → our standard names.
+# Maps provider column names -> our standard names.
 # Parsers try each alias until one matches.
 
 COLUMN_ALIASES = {
@@ -170,6 +170,27 @@ def parse_etf_file(ticker: str, filepath: Path) -> list[dict]:
         logger.warning("Empty data for %s from %s", ticker, filepath)
         return []
 
+    # Filter multi-fund files by fund name (e.g., PCR from Simplify's combined XLSX)
+    cfg = ETF_SOURCES.get(ticker, {})
+    filter_fund = cfg.get("filter_fund")
+    if filter_fund:
+        df = _normalize_columns(df)
+        fund_col = None
+        for col in df.columns:
+            if col.strip().lower() in ("fund name", "fund", "fund_name"):
+                fund_col = col
+                break
+        if fund_col:
+            before = len(df)
+            df = df[df[fund_col].astype(str).str.strip().str.upper() == filter_fund.upper()]
+            logger.info("Filtered %s: %d -> %d rows (fund=%s)",
+                        ticker, before, len(df), filter_fund)
+            if df.empty:
+                logger.warning("No rows matched fund filter '%s' for %s", filter_fund, ticker)
+                return []
+        else:
+            logger.warning("No fund name column found for filtering %s", ticker)
+
     # Sort by weight descending if weight column exists
     df = _normalize_columns(df)
     if "weight" in df.columns:
@@ -211,7 +232,7 @@ def save_parsed(parsed: dict[str, list[dict]], date_str: str | None = None) -> P
     PARSED_DIR.mkdir(parents=True, exist_ok=True)
     out = PARSED_DIR / f"holdings_{date_str}.json"
     out.write_text(json.dumps(parsed, indent=2, default=str))
-    logger.info("Saved parsed holdings → %s", out)
+    logger.info("Saved parsed holdings -> %s", out)
     return out
 
 

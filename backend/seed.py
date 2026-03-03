@@ -4,7 +4,7 @@ Seed the database with ETF metadata, initial holdings, AUM, and price history.
 Run once to initialize:
     python -m backend.seed
 
-Safe to re-run — uses upserts so existing data is updated, not duplicated.
+Safe to re-run -- uses upserts so existing data is updated, not duplicated.
 """
 
 import logging
@@ -14,7 +14,7 @@ from backend.database import Database
 
 logger = logging.getLogger(__name__)
 
-# ─── Month labels → approximate YYYYMMDD dates for history seeding ────────────
+# ─── Month labels -> approximate YYYYMMDD dates for history seeding ────────────
 MONTH_DATES = {
     "Sep": "20250901", "Oct": "20251001", "Nov": "20251101",
     "Dec": "20251201", "Jan": "20260101", "Feb": "20260201",
@@ -101,7 +101,7 @@ ETFS = [
         "yield_30d": 5.8, "inception": "2025-02-26", "price": 25.22, "price_change": 0.3,
         "nav": 25.19, "prem_disc": 0.12, "holdings_count": 180,
         "holdings_source": "https://www.ssga.com/.../priv",
-        "holdings_format": "CSV Download (partial — private sleeve opaque)",
+        "holdings_format": "CSV Download (partial -- private sleeve opaque)",
         "top_holdings": [
             {"name": "US Treasury Notes", "ticker": "UST", "weight": 28.5, "price": 99.12, "change": 0.1},
             {"name": "Corp IG Bonds Basket", "ticker": "IG", "weight": 35.2, "price": 100.44, "change": 0.05},
@@ -266,7 +266,7 @@ def seed_database(db: Database | None = None):
     """Populate the database with all ETF data.
 
     Inserts: metadata, initial holdings, AUM history, price history.
-    Safe to re-run — uses upserts throughout.
+    Safe to re-run -- uses upserts throughout.
     """
     close_db = db is None
     db = db or Database()

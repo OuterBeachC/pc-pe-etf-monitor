@@ -71,7 +71,7 @@ def run_pipeline(
 
     output_dir = output_dir or _today_dir()
     logger.info("=" * 60)
-    logger.info("PC/PE ETF Pipeline — %s", date_str)
+    logger.info("PC/PE ETF Pipeline -- %s", date_str)
     logger.info("Output: %s", output_dir)
     logger.info("ETFs: %s", ", ".join(tickers) if tickers else "ALL")
     logger.info("=" * 60)
@@ -101,7 +101,7 @@ def run_pipeline(
         errors = [r for r in download_results if r.get("error")]
         if errors:
             for e in errors:
-                logger.error("Download failed: %s — %s", e["ticker"], e["error"])
+                logger.error("Download failed: %s -- %s", e["ticker"], e["error"])
                 result["errors"].append(f"Download {e['ticker']}: {e['error']}")
     else:
         logger.info("Step 1/5: Download skipped (--parse-only)")
@@ -113,7 +113,7 @@ def run_pipeline(
     result["parsed"] = {t: len(h) for t, h in parsed.items()}
 
     if not parsed:
-        logger.warning("No holdings parsed — pipeline stopping early")
+        logger.warning("No holdings parsed -- pipeline stopping early")
         db.complete_pipeline_run(run_id, result)
         db.close()
         return result
@@ -128,7 +128,7 @@ def run_pipeline(
         holdings_diff = diff_holdings(parsed, yesterday_parsed)
         logger.info("Changes found in %d ETFs", len(holdings_diff))
     else:
-        logger.info("No previous day data — skipping diff")
+        logger.info("No previous day data -- skipping diff")
 
     # ── Step 4: Generate alerts ──
     logger.info("Step 4/5: Generating alerts...")
