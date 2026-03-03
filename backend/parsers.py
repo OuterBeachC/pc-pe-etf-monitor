@@ -56,12 +56,19 @@ def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     if rename_map:
         df = df.rename(columns=rename_map)
 
+    # Drop duplicate columns (keep first) to avoid Series-valued row lookups
+    df = df.loc[:, ~df.columns.duplicated()]
+
     return df
 
 
 def _clean_numeric(val):
     """Parse a potentially messy numeric string."""
-    if pd.isna(val):
+    try:
+        if pd.isna(val):
+            return 0.0
+    except (ValueError, TypeError):
+        # val may be a Series (duplicate columns) or non-scalar
         return 0.0
     if isinstance(val, (int, float)):
         return float(val)
