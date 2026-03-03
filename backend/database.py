@@ -74,10 +74,17 @@ class Database:
                 type          TEXT,
                 category      TEXT,
                 holdings_type TEXT,
+                aum           REAL,
+                aum_change_3m REAL,
                 expense_ratio REAL,
                 total_expense REAL,
                 yield_30d     REAL,
                 inception     TEXT,
+                price         REAL,
+                price_change  REAL,
+                nav           REAL,
+                prem_disc     REAL,
+                holdings_count INTEGER,
                 holdings_source TEXT,
                 holdings_format TEXT,
                 updated_at    TEXT NOT NULL
@@ -158,31 +165,40 @@ class Database:
     # ─── ETF Metadata ─────────────────────────────────────────────────────────
 
     def upsert_etf_metadata(self, etfs: list[dict]):
-        """Insert or update ETF metadata from app.py's etf list."""
+        """Insert or update ETF metadata."""
         now = datetime.now().isoformat()
         rows = []
         for e in etfs:
             rows.append((
                 e["ticker"], e["name"], e.get("issuer"), e.get("type"),
                 e.get("category"), e.get("holdings_type"),
+                e.get("aum"), e.get("aum_change_3m"),
                 e.get("expense_ratio"), e.get("total_expense"),
                 e.get("yield_30d"), e.get("inception"),
+                e.get("price"), e.get("price_change"),
+                e.get("nav"), e.get("prem_disc"),
+                e.get("holdings_count"),
                 e.get("holdings_source"), e.get("holdings_format"),
                 now,
             ))
         self.conn.executemany("""
             INSERT INTO etf_metadata
                 (ticker, name, issuer, type, category, holdings_type,
-                 expense_ratio, total_expense, yield_30d, inception,
-                 holdings_source, holdings_format, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 aum, aum_change_3m, expense_ratio, total_expense,
+                 yield_30d, inception, price, price_change, nav, prem_disc,
+                 holdings_count, holdings_source, holdings_format, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ticker) DO UPDATE SET
                 name=excluded.name, issuer=excluded.issuer,
                 type=excluded.type, category=excluded.category,
                 holdings_type=excluded.holdings_type,
+                aum=excluded.aum, aum_change_3m=excluded.aum_change_3m,
                 expense_ratio=excluded.expense_ratio,
                 total_expense=excluded.total_expense,
                 yield_30d=excluded.yield_30d, inception=excluded.inception,
+                price=excluded.price, price_change=excluded.price_change,
+                nav=excluded.nav, prem_disc=excluded.prem_disc,
+                holdings_count=excluded.holdings_count,
                 holdings_source=excluded.holdings_source,
                 holdings_format=excluded.holdings_format,
                 updated_at=excluded.updated_at
@@ -471,6 +487,70 @@ class Database:
             "SELECT * FROM pipeline_runs ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # ─── Full ETF Load (for app.py) ──────────────────────────────────────────
+
+    def load_etf_data(self) -> list[dict]:
+        """Build the full ETF list that app.py expects.
+
+        Combines etf_metadata, latest holdings, aum_history, and price_history
+        into the same dict structure that was previously hardcoded in app.py.
+        Returns an empty list if the database has not been seeded.
+        """
+        meta = self.get_etf_metadata()
+        if not meta:
+            return []
+
+        holdings_map = self.get_latest_holdings_all()
+
+        etfs = []
+        for m in meta:
+            ticker = m["ticker"]
+
+            # Top holdings from latest pipeline run
+            top_holdings = holdings_map.get(ticker, [])
+
+            # AUM history (oldest first for charts)
+            aum_rows = self.get_aum_history(ticker, limit=12)
+            aum_history = [
+                {"month": r["date"], "aum": r["aum"]}
+                for r in reversed(aum_rows)
+            ]
+
+            # Price history (oldest first for charts)
+            price_rows = self.get_price_history(ticker, limit=12)
+            price_history = [
+                {"date": r["date"], "price": r["price"]}
+                for r in reversed(price_rows)
+            ]
+
+            etfs.append({
+                "ticker": ticker,
+                "name": m["name"],
+                "issuer": m["issuer"],
+                "type": m["type"],
+                "category": m["category"],
+                "holdings_type": m["holdings_type"],
+                "aum": m["aum"] or 0,
+                "aum_change_3m": m["aum_change_3m"] or 0,
+                "expense_ratio": m["expense_ratio"] or 0,
+                "total_expense": m["total_expense"] or 0,
+                "yield_30d": m["yield_30d"] or 0,
+                "inception": m["inception"] or "",
+                "price": m["price"] or 0,
+                "price_change": m["price_change"] or 0,
+                "nav": m["nav"] or 0,
+                "prem_disc": m["prem_disc"] or 0,
+                "holdings_count": m["holdings_count"] or len(top_holdings),
+                "holdings_source": m["holdings_source"] or "",
+                "holdings_format": m["holdings_format"] or "",
+                "top_holdings": top_holdings,
+                "aum_history": aum_history,
+                "price_history": price_history,
+                "_data_source": "database",
+            })
+
+        return etfs
 
     # ─── Utility ──────────────────────────────────────────────────────────────
 
