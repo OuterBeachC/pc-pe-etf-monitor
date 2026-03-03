@@ -1,5 +1,5 @@
 """
-Configuration for ETF data retrieval — URLs, paths, and constants.
+Configuration for ETF data retrieval -- URLs, paths, and constants.
 
 Each ETF_SOURCES entry mirrors the automation configs in app.py and defines
 the download method, URL, expected file format, and any special handling.
@@ -16,8 +16,8 @@ ALERTS_DIR = BASE_DIR / "alerts"
 LOG_DIR = BASE_DIR / "logs"
 
 # ─── Alert Thresholds ────────────────────────────────────────────────────────
-PRICE_MOVE_THRESHOLD = 5.0         # percent — flag holdings with moves > this
-PRIVATE_ALLOC_THRESHOLD = 15.0     # percent — SEC illiquidity guideline
+PRICE_MOVE_THRESHOLD = 5.0         # percent -- flag holdings with moves > this
+PRIVATE_ALLOC_THRESHOLD = 15.0     # percent -- SEC illiquidity guideline
 PRIVATE_TICKERS = {"SPACEX", "XAI", "ANTHR", "APC-1", "APC-2", "APC-3"}
 
 # ─── Request Defaults ────────────────────────────────────────────────────────
@@ -29,29 +29,49 @@ USER_AGENT = (
 HEADERS = {"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml,*/*"}
 
 # ─── ETF Source Definitions ───────────────────────────────────────────────────
-# method: "csv"       -> direct HTTP download (requests.get)
-# method: "browser"   -> needs headless browser (Playwright)
-# method: "csv+edgar" -> CSV download + SEC EDGAR for opaque sleeve
+# method: "csv"            -> direct HTTP download (requests.get)
+# method: "csv_dated"      -> direct download with date-templated URL
+# method: "csv+edgar"      -> HTTP download + SEC EDGAR for opaque sleeve
+# method: "browser"        -> Playwright/BS4 table scrape
+# method: "selenium"       -> Selenium click-to-download (generic)
+# method: "selenium_scrape"-> Selenium navigate + extract table from page/modal
+# method: "invesco"        -> Invesco-specific Selenium flow (role popup + export)
 
 ETF_SOURCES = {
     # ── Private Credit ──
     "BIZD": {
         "name": "VanEck BDC Income ETF",
         "category": "Private Credit",
-        "method": "csv",
+        "method": "selenium",
         "url": "https://www.vaneck.com/us/en/investments/bdc-income-etf-bizd/holdings/",
-        "download_url": "https://www.vaneck.com/us/en/investments/bdc-income-etf-bizd/holdings/?download=csv",
+        "selenium_actions": [
+            {"text": "Download XLS", "wait_after": 5},
+        ],
+        "file_ext": ".xls",
+        "notes": "Selenium clicks Download XLS button on VanEck holdings page.",
+    },
+    "HYIN": {
+        "name": "WisdomTree Alternative Income Fund",
+        "category": "Private Credit",
+        "method": "selenium",
+        "url": "https://www.wisdomtree.com/investments/etfs/alternative/hyin#",
+        "selenium_actions": [
+            {"text": "ALL HOLDINGS", "wait_after": 3},
+            {"text": "Export Holdings", "wait_after": 5},
+        ],
         "file_ext": ".csv",
-        "notes": "Direct CSV link available. Append date parameter.",
+        "notes": "Click ALL HOLDINGS to expand, then Export Holdings to download.",
     },
     "PBDC": {
         "name": "Putnam BDC Income ETF",
         "category": "Private Credit",
-        "method": "browser",
-        "url": "https://www.franklintempleton.com/.../PBDC",
-        "selector": '[data-testid="holdings-table"]',
-        "file_ext": ".csv",
-        "notes": "Holdings table rendered client-side. Use headless browser.",
+        "method": "selenium",
+        "url": "https://www.franklintempleton.com/investments/options/exchange-traded-funds/products/39500/SINGLCLASS/putnam-bdc-income-etf/PBDC#portfolio",
+        "selenium_actions": [
+            {"text": "XLS", "wait_after": 5},
+        ],
+        "file_ext": ".xls",
+        "notes": "Franklin Templeton. Click XLS button on portfolio tab.",
     },
     "VPC": {
         "name": "Virtus Private Credit Strategy ETF",
@@ -76,29 +96,32 @@ ETF_SOURCES = {
     "PCMM": {
         "name": "BondBloxx Private Credit CLO ETF",
         "category": "Private Credit",
-        "method": "csv",
-        "url": "https://bondbloxxetf.com/bondbloxx-private-credit-clo-etf/",
-        "download_url": "https://bondbloxxetf.com/fund-data/pcmm-holdings.csv",
+        "method": "selenium",
+        "url": "https://bondbloxxetf.com/bondbloxx-private-credit-clo-etf/#portfolio",
+        "selenium_actions": [
+            {"text": "Download CSV", "wait_after": 5},
+        ],
         "file_ext": ".csv",
-        "notes": "Holdings CSV with CUSIP, coupon, maturity.",
+        "notes": "BondBloxx. Click Download CSV on portfolio section.",
     },
     "PCR": {
         "name": "Simplify VettaFi Private Credit Strategy ETF",
         "category": "Private Credit",
-        "method": "csv",
+        "method": "csv_dated",
         "url": "https://www.simplify.us/etfs/pcr",
-        "download_url": "https://www.simplify.us/etfs/pcr/holdings?format=csv",
-        "file_ext": ".csv",
-        "notes": "CSV export. Credit hedge positions (TRS) require manual monitoring.",
+        "download_url_template": "https://www.simplify.us/sites/default/files/excel_holdings/%Y_%m_%d_Simplify_Portfolio_EOD_Tracker.xlsx",
+        "filter_fund": "PCR",
+        "file_ext": ".xlsx",
+        "notes": "Multi-fund XLSX. Filter rows where FUND NAME column = PCR.",
     },
     "HBDC": {
         "name": "Hilton BDC Corporate Bond ETF",
         "category": "Private Credit",
-        "method": "csv",
-        "url": "https://www.hiltoncapitalmanagement.com/hbdc",
-        "download_url": "https://www.hiltoncapitalmanagement.com/hbdc/holdings/download",
+        "method": "browser",
+        "url": "https://www.hiltonetfs.com/hbdc-all-holdings",
+        "selector": "table",
         "file_ext": ".csv",
-        "notes": "BDC bond holdings with CUSIP, coupon, maturity, rating.",
+        "notes": "Scrape table from page. Verify date in '(as of MM/DD/YYYY)' header.",
     },
     "PRSD": {
         "name": "State Street Short Duration IG Public Private Credit ETF",
@@ -134,31 +157,34 @@ ETF_SOURCES = {
     "XOVR": {
         "name": "ERShares Private-Public Crossover ETF",
         "category": "Private Equity",
-        "method": "browser",
-        "url": "https://entrepreneurshares.com/",
-        "selector": '[class*="holdings"]',
+        "method": "selenium_scrape",
+        "url": "https://entrepreneurshares.com/xovr-etf/#fund-top-10-holdings",
+        "selenium_actions": [
+            {"text": "VIEW ALL HOLDINGS", "wait_after": 3},
+        ],
+        "selector": "table",
         "edgar_query": "ERShares XOVR",
         "edgar_form": "NPORT-P",
         "file_ext": ".csv",
-        "notes": "SpaceX SPV fair-valued daily under Rule 2a-5. Monitor N-PORT filings.",
+        "notes": "Click VIEW ALL HOLDINGS, scrape modal table. SpaceX SPV fair-valued daily.",
     },
     "AGIX": {
         "name": "KraneShares AI & Technology ETF",
         "category": "Private Equity",
-        "method": "csv",
+        "method": "csv_dated",
         "url": "https://kraneshares.com/etf/agix/",
-        "download_url": "https://kraneshares.com/etf/agix/holdings/?format=csv",
+        "download_url_template": "https://kraneshares.com/csv/%m_%d_%Y_agix_holdings.csv",
         "file_ext": ".csv",
-        "notes": "CSV export available. Private positions (SpaceX, Anthropic) held via SPVs.",
+        "notes": "Date-stamped CSV. Private positions (SpaceX, Anthropic) held via SPVs.",
     },
     "RONB": {
         "name": "Baron First Principles ETF",
         "category": "Private Equity",
-        "method": "csv",
+        "method": "csv_dated",
         "url": "https://www.baroncapitalgroup.com/product-detail/baron-first-principles-etf-ronb",
-        "download_url": "https://www.baroncapitalgroup.com/.../ronb/holdings/download",
+        "download_url_template": "https://www.baroncapitalgroup.com/api/product/media/csv/RONB-HOLDINGS-%Y%m%d-0.csv?product_type=etf-downloads&id=a02798d8-cb16-49e0-bbdc-eb1315aa4cbf",
         "file_ext": ".csv",
-        "notes": "SpaceX 21.5%, xAI 5.4% — ~27% private. Monitor 15% illiquidity rule.",
+        "notes": "Date-stamped CSV via API. SpaceX ~21.5%%, xAI ~5.4%% -- ~27%% private.",
     },
 }
 
