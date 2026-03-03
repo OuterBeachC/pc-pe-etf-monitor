@@ -13,11 +13,14 @@ from plotly.subplots import make_subplots
 import json
 import logging
 import os
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, date
 from pathlib import Path
 
 from backend.database import Database
 from backend.parsers import load_parsed
+from backend.pipeline import run_pipeline
 from backend.seed import seed_database
 
 # ─── Page Config ────────────────────────────────────────────────────────────
@@ -83,18 +86,22 @@ st.markdown("""
 def load_etf_data():
     """Load ETF universe data from the SQLite database.
 
-    Requires the database to be seeded first:
-        python -m backend.seed
-
-    Live holdings from the pipeline (python -m backend) are overlaid
-    automatically when available via parsed JSON files.
+    On first run the database is seeded with ETF metadata, then the
+    pipeline is executed to fetch live holdings from provider sites.
+    Subsequent loads use cached data + any fresh parsed JSON overlays.
     """
     db = Database()
     etfs = db.load_etf_data()
 
     if not etfs:
-        # Auto-seed on first run (e.g. fresh Streamlit Cloud deploy)
+        # First run: seed metadata (ETF info, AUM history, price history)
         seed_database(db)
+        # Fetch live holdings via pipeline (downloads what it can over HTTP;
+        # Selenium-dependent ETFs will gracefully skip if Chrome is absent)
+        try:
+            run_pipeline()
+        except Exception as exc:
+            logger.warning("Pipeline run failed on startup: %s", exc)
         etfs = db.load_etf_data()
 
     db.close()
