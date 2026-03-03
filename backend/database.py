@@ -2,12 +2,12 @@
 SQLite database layer for persisting all ETF holdings and pipeline data.
 
 Tables:
-  etf_metadata   — Static ETF info (ticker, name, issuer, category, etc.)
-  holdings       — Daily holdings snapshots per ETF
-  aum_history    — AUM over time
-  price_history  — ETF price over time
-  alerts         — Generated alerts (price moves, allocation, diffs)
-  pipeline_runs  — Log of each pipeline execution
+  etf_metadata   -- Static ETF info (ticker, name, issuer, category, etc.)
+  holdings       -- Daily holdings snapshots per ETF
+  aum_history    -- AUM over time
+  price_history  -- ETF price over time
+  alerts         -- Generated alerts (price moves, allocation, diffs)
+  pipeline_runs  -- Log of each pipeline execution
 
 Usage:
   from backend.database import Database

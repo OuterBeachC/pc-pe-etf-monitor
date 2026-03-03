@@ -2,9 +2,9 @@
 Alert generation for ETF holdings monitoring.
 
 Three alert categories matching the app.py risk monitoring:
-  1. Price moves     — Flag holdings with price changes exceeding threshold
-  2. Private allocation — Check private/illiquid % vs SEC 15% guideline
-  3. Holdings diff   — Compare day-over-day changes to detect rebalances
+  1. Price moves     -- Flag holdings with price changes exceeding threshold
+  2. Private allocation -- Check private/illiquid % vs SEC 15% guideline
+  3. Holdings diff   -- Compare day-over-day changes to detect rebalances
 """
 
 import json
