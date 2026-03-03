@@ -216,13 +216,62 @@ class Database:
             rows = self.conn.execute("SELECT * FROM etf_metadata").fetchall()
         return [dict(r) for r in rows]
 
+    # ─── Auto-Seed Metadata ────────────────────────────────────────────────────
+
+    def _ensure_metadata(self, tickers: list[str]):
+        """Auto-insert minimal etf_metadata rows for tickers not yet in the table.
+
+        Pulls name and category from ETF_SOURCES config so the foreign key
+        constraint on holdings is satisfied.
+        """
+        from backend.config import ETF_SOURCES
+
+        existing = {
+            r["ticker"]
+            for r in self.conn.execute("SELECT ticker FROM etf_metadata").fetchall()
+        }
+        missing = [t for t in tickers if t not in existing]
+        if not missing:
+            return
+
+        now = datetime.now().isoformat()
+        rows = []
+        for ticker in missing:
+            cfg = ETF_SOURCES.get(ticker, {})
+            rows.append((
+                ticker,
+                cfg.get("name", ticker),
+                None,  # issuer
+                None,  # type
+                cfg.get("category"),
+                None, None, None, None, None, None, None, None, None, None, None,
+                None, None, None,
+                now,
+            ))
+
+        self.conn.executemany("""
+            INSERT OR IGNORE INTO etf_metadata
+                (ticker, name, issuer, type, category, holdings_type,
+                 aum, aum_change_3m, expense_ratio, total_expense,
+                 yield_30d, inception, price, price_change, nav, prem_disc,
+                 holdings_count, holdings_source, holdings_format, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, rows)
+        self.conn.commit()
+        logger.info("Auto-created metadata for %d new ETFs: %s",
+                     len(missing), ", ".join(missing))
+
     # ─── Holdings ─────────────────────────────────────────────────────────────
 
     def insert_holdings(self, date_str: str, parsed: dict[str, list[dict]]):
         """Insert parsed holdings for a given date.
 
         Replaces any existing holdings for the same date+ETF to allow re-runs.
+        Auto-creates minimal etf_metadata rows for tickers not yet in the table.
         """
+        # Ensure all tickers have metadata (foreign key constraint)
+        self._ensure_metadata(list(parsed.keys()))
+
         for etf_ticker, holdings in parsed.items():
             # Remove existing data for this date+ETF (allows re-runs)
             self.conn.execute(
