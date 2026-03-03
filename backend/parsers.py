@@ -126,26 +126,13 @@ def parse_csv(filepath: Path) -> pd.DataFrame:
 
 
 def parse_xlsx(filepath: Path) -> pd.DataFrame:
-    """Parse an XLSX holdings file (used by SSGA for PRIV/PRSD).
-
-    Handles BadZipFile errors from corrupt or non-XLSX files (e.g. HTML
-    error pages saved with .xlsx extension).
-    """
-    from zipfile import BadZipFile
-
+    """Parse an XLSX holdings file (used by SSGA for PRIV/PRSD)."""
     # SSGA files typically have metadata rows at the top
     try:
         df = pd.read_excel(filepath, engine="openpyxl")
-    except BadZipFile:
-        logger.error("File is not a valid XLSX (BadZipFile): %s", filepath)
-        return pd.DataFrame()
     except Exception:
-        try:
-            # Try skipping header rows
-            df = pd.read_excel(filepath, engine="openpyxl", skiprows=4)
-        except BadZipFile:
-            logger.error("File is not a valid XLSX (BadZipFile): %s", filepath)
-            return pd.DataFrame()
+        # Try skipping header rows
+        df = pd.read_excel(filepath, engine="openpyxl", skiprows=4)
 
     df = df.dropna(how="all")
 
@@ -183,6 +170,27 @@ def parse_etf_file(ticker: str, filepath: Path) -> list[dict]:
         logger.warning("Empty data for %s from %s", ticker, filepath)
         return []
 
+    # Filter multi-fund files by fund name (e.g., PCR from Simplify's combined XLSX)
+    cfg = ETF_SOURCES.get(ticker, {})
+    filter_fund = cfg.get("filter_fund")
+    if filter_fund:
+        df = _normalize_columns(df)
+        fund_col = None
+        for col in df.columns:
+            if col.strip().lower() in ("fund name", "fund", "fund_name"):
+                fund_col = col
+                break
+        if fund_col:
+            before = len(df)
+            df = df[df[fund_col].astype(str).str.strip().str.upper() == filter_fund.upper()]
+            logger.info("Filtered %s: %d -> %d rows (fund=%s)",
+                        ticker, before, len(df), filter_fund)
+            if df.empty:
+                logger.warning("No rows matched fund filter '%s' for %s", filter_fund, ticker)
+                return []
+        else:
+            logger.warning("No fund name column found for filtering %s", ticker)
+
     # Sort by weight descending if weight column exists
     df = _normalize_columns(df)
     if "weight" in df.columns:
@@ -200,9 +208,6 @@ def parse_holdings_dir(holdings_dir: Path) -> dict[str, list[dict]]:
     """Parse all holdings files in a dated directory.
 
     Returns: {"BIZD": [...holdings...], "PBDC": [...holdings...], ...}
-
-    Errors parsing individual files are caught and logged so that one
-    corrupt file does not crash the entire pipeline.
     """
     results = {}
 
@@ -211,12 +216,9 @@ def parse_holdings_dir(holdings_dir: Path) -> dict[str, list[dict]]:
         filepath = holdings_dir / f"{ticker}_holdings{ext}"
 
         if filepath.exists():
-            try:
-                holdings = parse_etf_file(ticker, filepath)
-                if holdings:
-                    results[ticker] = holdings
-            except Exception as exc:
-                logger.error("Failed to parse %s from %s: %s", ticker, filepath, exc)
+            holdings = parse_etf_file(ticker, filepath)
+            if holdings:
+                results[ticker] = holdings
         else:
             logger.debug("No file for %s at %s", ticker, filepath)
 
